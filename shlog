@@ -1,0 +1,347 @@
+#!/usr/bin/env sh
+# shlog
+# Minimal POSIX shell logging utility. Single file. No dependencies.
+
+set -euf
+
+VERSION=0.1.0
+progname="${0##*/}"
+
+VERBOSE=0
+
+readonly DEFAULT_FILE="${HOME}/.shlog.log"
+readonly STATE_FILE="${HOME}/.shlog.conf"
+
+log_level="${LOG_LEVEL:-debug}"
+log_file="${LOG_FILE:-${DEFAULT_FILE}}"
+
+msg() {
+    printf "%b\n" "${1}" >&2
+}
+die() {
+    msg "${1}"
+    exit 1
+}
+version() {
+    msg "$progname $VERSION"
+}
+usage() {
+    cat <<EOF
+Usage: $progname [OPTIONS] COMMAND
+
+Commands:
+  debug <message>   Log debug message
+  info <message>    Log info message
+  warn <message>    Log warning message
+  error <message>   Log error message
+  setlevel <level>  Set log level (debug|info|warn|error)
+  setfile <path>    Set log file path
+  conf              Show current configuration
+  show             Show log file contents
+  tail             Follow log file (tail -f)
+  rotate            Shorten the log file to 1000 lines
+  clear             Clear log file
+
+Options:
+  v, -v, --verbose  Print to console as well
+  h, -h, --help    Show this help and exit
+  V, -V, --version Show version and exit
+
+Environment Variables:
+  LOG_LEVEL            Set log level (debug|info|warn|error)
+  LOG_FILE             Set log file path
+  LOG_NO_TIMESTAMP     Set to 1 to disable timestamp
+  LOG_FORMAT          Custom format (%%t=time %%l=level %%m=msg)
+
+test:
+  make test
+EOF
+    exit "${1:-0}"
+}
+
+get_level_num() {
+    case "$1" in
+        debug) echo 0 ;;
+        info) echo 1 ;;
+        warn) echo 2 ;;
+        error) echo 3 ;;
+        *) echo 0 ;;
+    esac
+}
+
+get_timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+format_message() {
+    message_level="$1"
+    message="$2"
+
+    timestamp=""
+    if [ -z "${LOG_NO_TIMESTAMP:-}" ]; then
+        timestamp="$(get_timestamp)"
+    fi
+
+    fmt="${LOG_FORMAT:-}"
+    if [ -z "$fmt" ]; then
+        if [ -n "$timestamp" ]; then
+            printf "[%s] [%5s] %s\n" "$timestamp" "$message_level" "$message"
+        else
+            printf "[%5s] %s\n" "$message_level" "$message"
+        fi
+    else
+        line="$fmt"
+        case "$line" in
+            *%t*) line="$(echo "$line" | sed "s/%t/$timestamp/g")" ;;
+        esac
+        case "$line" in
+            *%l*) line="$(echo "$line" | sed "s/%l/$message_level/g")" ;;
+        esac
+        case "$line" in
+            *%m*) line="$(echo "$line" | sed "s/%m/$message/g")" ;;
+        esac
+        printf '%s\n' "$line"
+    fi
+}
+
+should_log() {
+    message_level="$1"
+    current_level_num="$(get_level_num "$log_level")"
+    message_level_num="$(get_level_num "$message_level")"
+    [ "$message_level_num" -ge "$current_level_num" ]
+}
+
+write_to_file() {
+    line="$1"
+    mkdir -p "$(dirname "$log_file")" || die "cannot create log dir"
+    printf '%s\n' "$line" >>"$log_file"
+}
+
+if { [ -t 1 ] || [ -t 2 ]; } && [ "${NO_COLOR:-}" = "" ]; then
+    RED="\033[0;31m"
+    YELLOW="\033[0;33m"
+    BLUE="\033[0;34m"
+    NC="\033[0m"
+else
+    RED=""
+    YELLOW=""
+    BLUE=""
+    NC=""
+fi
+
+# Update log_msg function:
+log_msg() {
+    message_level="$1"
+    message="$2"
+
+    if ! should_log "$message_level"; then
+        return
+    fi
+
+    line="$(format_message "$message_level" "$message")"
+
+    if [ "$VERBOSE" = "1" ]; then
+        case "$message_level" in
+            error) printf "${RED}%s${NC}\n" "$line" >&2 ;;
+            warn) printf "${YELLOW}%s${NC}\n" "$line" ;;
+            info) printf "${BLUE}%s${NC}\n" "$line" ;;
+            *) printf "%s\n" "$line" ;;
+        esac
+    fi
+
+    write_to_file "$line"
+}
+
+load_state() {
+    [ -f "$STATE_FILE" ] || return 0
+
+    _conf_level=""
+    _conf_file=""
+
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+
+    [ -n "$_conf_level" ] && [ -z "${LOG_LEVEL:-}" ] && log_level="$_conf_level"
+    [ -n "$_conf_file" ] && [ -z "${LOG_FILE:-}" ] && log_file="$_conf_file"
+}
+
+save_state() {
+    tmp="${STATE_FILE}.tmp.$$"
+
+    cat >"$tmp" <<EOF
+_conf_level=$log_level
+_conf_file=$log_file
+EOF
+
+    mv "$tmp" "$STATE_FILE" || die "failed to write state"
+}
+
+COMMANDS="
+debug:cmd_debug
+info:cmd_info
+warn:cmd_warn
+error:cmd_error
+setlevel:cmd_setlevel
+setfile:cmd_setfile
+conf:cmd_conf
+show:cmd_show
+tail:cmd_tail
+rotate:cmd_rotate
+clear:cmd_clear
+"
+
+cmd_debug() {
+    if [ "$#" -eq 0 ]; then
+        printf 'Error: debug requires a message argument\n' >&2
+        exit 1
+    fi
+    log_msg "debug" "$*"
+}
+
+cmd_info() {
+    if [ "$#" -eq 0 ]; then
+        printf 'Error: info requires a message argument\n' >&2
+        exit 1
+    fi
+    log_msg "info" "$*"
+}
+
+cmd_warn() {
+    if [ "$#" -eq 0 ]; then
+        printf 'Error: warn requires a message argument\n' >&2
+        exit 1
+    fi
+    log_msg "warn" "$*"
+}
+
+cmd_error() {
+    if [ "$#" -eq 0 ]; then
+        printf 'Error: error requires a message argument\n' >&2
+        exit 1
+    fi
+    log_msg "error" "$*"
+}
+
+cmd_setlevel() {
+    new_level="${1:-}"
+
+    if [ -z "$new_level" ]; then
+        printf 'Error: setlevel requires a level argument\n' >&2
+        printf 'Usage: shlog setlevel <debug|info|warn|error>\n' >&2
+        exit 1
+    fi
+
+    case "$new_level" in
+        debug | info | warn | error)
+            log_level="$new_level"
+            save_state
+            ;;
+        *)
+            printf 'Error: Invalid level: %s\n' "$new_level" >&2
+            printf 'Valid levels: debug, info, warn, error\n' >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_setfile() {
+    new_file="${1:-}"
+
+    if [ -z "$new_file" ]; then
+        printf 'Error: setfile requires a path argument\n' >&2
+        printf 'Usage: shlog setfile <path>\n' >&2
+        exit 1
+    fi
+
+    touch "$new_file" 2>/dev/null || {
+        printf 'Error: cannot write to log file: %s\n' "$new_file" >&2
+        exit 1
+    }
+
+    log_file="$new_file"
+    save_state
+}
+
+cmd_rotate() {
+    if [ ! -f "$log_file" ]; then
+        printf 'Error: Log file does not exist: %s\n' "$log_file" >&2
+        exit 1
+    fi
+
+    tail -n 1000 "$log_file" > "$log_file.tmp" || {
+        printf 'Error: Failed to rotate log file\n' >&2
+            rm -f "$log_file.tmp"
+            exit 1
+    }
+
+mv "$log_file.tmp" "$log_file"
+printf 'Rotated log file to last 1000 lines: %s\n' "$log_file"
+}
+
+cmd_clear() {
+    if [ -f "$log_file" ]; then
+        rm "$log_file"
+        printf 'Cleared log file: %s\n' "$log_file"
+    else
+        printf 'Error: Log file does not exist: %s\n' "$log_file" >&2
+        exit 1
+    fi
+}
+
+cmd_conf() {
+	printf "Log file:  %s\n" "$log_file"
+	printf "Log level: %s\n" "$log_level"
+}
+
+cmd_show() {
+	if [ ! -f "$log_file" ]; then
+		printf 'Error: Log file does not exist: %s\n' "$log_file" >&2
+		exit 1
+	fi
+	cat "$log_file"
+}
+
+cmd_tail() {
+    if [ ! -f "$log_file" ]; then
+        printf 'Error: Log file does not exist: %s\n' "$log_file" >&2
+        exit 1
+    fi
+    tail -f "$log_file"
+}
+
+load_state
+
+dispatchargs() {
+	[ "$#" -eq 0 ] && usage 1
+
+	VERBOSE=0
+
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+			-v|--verbose) VERBOSE=1; shift; continue ;;
+			-h|--help) usage 0 ;;
+			-V|--version) version "$@"; exit 0 ;;
+			--) shift; break ;;
+			-*) msg "unknown option: $1"; usage 1 ;;
+			*) break ;;
+		esac
+		shift
+	done
+
+	cmd="${1:-}"
+	[ -z "$cmd" ] && usage 1
+	shift || true
+
+	for entry in $COMMANDS; do
+		name=${entry%%:*}
+		func=${entry#*:}
+		func=${func%%:*}
+		[ "$name" = "$cmd" ] || continue
+		"$func" "$@"
+		return
+	done
+	msg "Unknown command: $cmd"
+	usage 1
+}
+
+dispatchargs "${@}"
