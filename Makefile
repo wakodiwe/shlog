@@ -3,10 +3,7 @@ DEST   := $(PREFIX)/bin/shlog
 
 .PHONY: install uninstall check
 
-check:
-	@shellcheck shlog
-
-install:
+install: uninstall
 	@mkdir -p $(dir $(DEST))
 	@cp shlog $(DEST)
 	@chmod +x $(DEST)
@@ -18,3 +15,6 @@ uninstall:
 
 test:
 	cd tests && ./test_shlog.sh
+
+check:
+	@shellcheck shlog
