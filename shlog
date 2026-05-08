@@ -4,7 +4,7 @@
 
 set -euf
 
-VERSION=0.1.0
+VERSION=0.1.1
 progname="${0##*/}"
 
 VERBOSE=0
@@ -92,13 +92,13 @@ format_message() {
     else
         line="$fmt"
         case "$line" in
-            *%t*) line="$(echo "$line" | sed "s/%t/$timestamp/g")" ;;
+            *%t*) line="$(echo "$line" | sed "s|%t|$timestamp|g")" ;;
         esac
         case "$line" in
-            *%l*) line="$(echo "$line" | sed "s/%l/$message_level/g")" ;;
+            *%l*) line="$(echo "$line" | sed "s|%l|$message_level|g")" ;;
         esac
         case "$line" in
-            *%m*) line="$(echo "$line" | sed "s/%m/$message/g")" ;;
+            *%m*) line="$(echo "$line" | sed "s|%m|$message|g")" ;;
         esac
         printf '%s\n' "$line"
     fi
