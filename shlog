@@ -5,9 +5,12 @@
 set -euf
 
 VERSION=0.1.2
-progname="${0##*/}"
 
-VERBOSE=0
+PROGPATH="$(realpath -m "$0")"
+readonly PROGPATH
+readonly PROGNAME="${PROGPATH##*/}"
+
+VERBOSE="${VERBOSE:-0}"
 
 readonly DEFAULT_FILE="${HOME}/.shlog.log"
 readonly STATE_FILE="${HOME}/.shlog.conf"
@@ -23,37 +26,37 @@ die() {
     exit 1
 }
 version() {
-    msg "$progname $VERSION"
+    msg "$PROGNAME $VERSION"
 }
 usage() {
-    cat <<EOF
-Usage: $progname [OPTIONS] COMMAND
+    cat << EOF
+Usage: $PROGNAME [OPTIONS] COMMAND
 
 Commands:
-  debug <message>   Log debug message
-  info <message>    Log info message
-  warn <message>    Log warning message
-  error <message>   Log error message
-  setlevel <level>  Set log level (debug|info|warn|error)
-  setfile <path>    Set log file path
-  conf              Show current configuration
-  show             Show log file contents
-  tail             Follow log file (tail -f)
-  rotate            Shorten the log file to 1000 lines
-  clear             Clear log file
+  debug <message>     Log debug message
+  info <message>      Log info message
+  warn <message>      Log warning message
+  error <message>     Log error message
+  setlevel <level>    Set log level (debug|info|warn|error)
+  setfile <path>      Set log file path
+  conf                Show current configuration
+  show                Show log file contents
+  tail                Follow log file (tail -f)
+  rotate              Shorten the log file to 1000 lines
+  clear               Clear log file
 
 Options:
-  v, -v, --verbose  Print to console as well
-  h, -h, --help    Show this help and exit
-  V, -V, --version Show version and exit
+  v, -v, --verbose    Print to console as well
+  h, -h, --help       Show this help and exit
+  V, -V, --version    Show version and exit
 
 Environment Variables:
-  LOG_LEVEL            Set log level (debug|info|warn|error)
-  LOG_FILE             Set log file path
-  LOG_NO_TIMESTAMP     Set to 1 to disable timestamp
+  LOG_LEVEL           Set log level (debug|info|warn|error)
+  LOG_FILE            Set log file path
+  LOG_NO_TIMESTAMP    Set to 1 to disable timestamp
   LOG_FORMAT          Custom format (%%t=time %%l=level %%m=msg)
 
-test:
+Test shlog:
   make test
 EOF
     exit "${1:-0}"
@@ -114,7 +117,7 @@ should_log() {
 write_to_file() {
     line="$1"
     mkdir -p "$(dirname "$log_file")" || die "cannot create log dir"
-    printf '%s\n' "$line" >>"$log_file"
+    printf '%s\n' "$line" >> "$log_file"
 }
 
 if { [ -t 1 ] || [ -t 2 ]; } && [ "${NO_COLOR:-}" = "" ]; then
@@ -168,7 +171,7 @@ load_state() {
 save_state() {
     tmp="${STATE_FILE}.tmp.$$"
 
-    cat >"$tmp" <<EOF
+    cat > "$tmp" << EOF
 _conf_level=$log_level
 _conf_file=$log_file
 EOF
@@ -253,7 +256,7 @@ cmd_setfile() {
         exit 1
     fi
 
-    touch "$new_file" 2>/dev/null || {
+    touch "$new_file" 2> /dev/null || {
         printf 'Error: cannot write to log file: %s\n' "$new_file" >&2
         exit 1
     }
@@ -270,12 +273,12 @@ cmd_rotate() {
 
     tail -n 1000 "$log_file" > "$log_file.tmp" || {
         printf 'Error: Failed to rotate log file\n' >&2
-            rm -f "$log_file.tmp"
-            exit 1
+        rm -f "$log_file.tmp"
+        exit 1
     }
 
-mv "$log_file.tmp" "$log_file"
-printf 'Rotated log file to last 1000 lines: %s\n' "$log_file"
+    mv "$log_file.tmp" "$log_file"
+    printf 'Rotated log file to last 1000 lines: %s\n' "$log_file"
 }
 
 cmd_clear() {
@@ -289,16 +292,16 @@ cmd_clear() {
 }
 
 cmd_conf() {
-	printf "Log file:  %s\n" "$log_file"
-	printf "Log level: %s\n" "$log_level"
+    printf "Log file: %s\n" "$log_file"
+    printf "Log level: %s\n" "$log_level"
 }
 
 cmd_show() {
-	if [ ! -f "$log_file" ]; then
-		printf 'Error: Log file does not exist: %s\n' "$log_file" >&2
-		exit 1
-	fi
-	cat "$log_file"
+    if [ ! -f "$log_file" ]; then
+        printf 'Error: Log file does not exist: %s\n' "$log_file" >&2
+        exit 1
+    fi
+    cat "$log_file"
 }
 
 cmd_tail() {
@@ -312,36 +315,49 @@ cmd_tail() {
 load_state
 
 dispatchargs() {
-	[ "$#" -eq 0 ] && usage 1
+    [ "$#" -eq 0 ] && usage 1
 
-	VERBOSE=0
+    VERBOSE="${VERBOSE:-0}"
 
-	while [ "$#" -gt 0 ]; do
-		case "$1" in
-			-v|--verbose) VERBOSE=1; shift; continue ;;
-			-h|--help) usage 0 ;;
-			-V|--version) version "$@"; exit 0 ;;
-			--) shift; break ;;
-			-*) msg "unknown option: $1"; usage 1 ;;
-			*) break ;;
-		esac
-		shift
-	done
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -v | --verbose)
+                VERBOSE=1
+                shift
+                continue
+                ;;
+            -h | --help) usage 0 ;;
+            -V | --version)
+                version "$@"
+                exit 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            -*)
+                msg "unknown option: $1"
+                usage 1
+                ;;
+            *) break ;;
+        esac
+        shift
+    done
 
-	cmd="${1:-}"
-	[ -z "$cmd" ] && usage 1
-	shift || true
+    cmd="${1:-}"
+    [ -z "$cmd" ] && usage 1
+    shift || true
 
-	for entry in $COMMANDS; do
-		name=${entry%%:*}
-		func=${entry#*:}
-		func=${func%%:*}
-		[ "$name" = "$cmd" ] || continue
-		"$func" "$@"
-		return
-	done
-	msg "Unknown command: $cmd"
-	usage 1
+    for entry in $COMMANDS; do
+        name=${entry%%:*}
+        func=${entry#*:}
+        func=${func%%:*}
+        [ "$name" = "$cmd" ] || continue
+        "$func" "$@"
+        return
+    done
+    msg "Unknown command: $cmd"
+    usage 1
 }
 
 dispatchargs "${@}"
