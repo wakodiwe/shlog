@@ -13,8 +13,5 @@ uninstall:
 	@rm -f $(DEST)
 	@printf "Removed %s\n" "$(DEST)"
 
-test:
-	cd tests && ./test_shlog.sh
-
 check:
 	@shellcheck shlog

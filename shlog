@@ -6,6 +6,7 @@ set -eu
 VERSION=0.1.2
 
 LOGLEVEL="${LOGLEVEL:-3}"
+COLOR="${COLOR:-1}"
 
 PROGPATH="$(realpath -m "$0")"
 PROGNAME="${PROGPATH##*/}"
@@ -38,15 +39,37 @@ _log_levels() {
     esac
 }
 
+_log_colors() {
+    case "$1" in
+        -1) printf '31' ;;
+        0) printf '35' ;;
+        1) printf '38' ;;
+        2) printf '34' ;;
+        3) printf '33' ;;
+        *) printf '0' ;;
+    esac
+}
+
 _log() {
-    level="$1"
+    _level="$1"
     shift
 
-    [ "$LOGLEVEL" -lt "$level" ] && return 0
+    [ "$LOGLEVEL" -lt "$_level" ] \
+        && return 0
 
-    printf '%s %b\n' "[$(_log_levels "$level")]" "$*" # >&2
+    _name="$(_log_levels "$_level")"
+    _color="$(_log_colors "$_level")"
 
-    [ "$level" -eq -1 ] && return 1
+    _line="[$_name] $*"
+
+    if [ "$COLOR" -eq 1 ]; then
+        printf '\033[%sm%s\033[0m\n' "$_color" "$_line" >&2
+    else
+        printf '%s\n' "$_line" >&2
+    fi
+
+    [ "$_level" -eq -1 ] \
+        && exit 1
 
     return 0
 }
@@ -83,8 +106,7 @@ log_die()   {
 }
 
 # Test:
-log_msg "This is a direct message to stderr." " – "
-log_msg "See 'log_msg \$2' for pythonic flavor. (LOGLEVEL '-1')"
+log_msg "This is a direct message to stderr."
 log_info "Processing data... please wait"
 log_debug "Current_value=42, state=READY"
 log_warn "Disk space is running low on /var/log"
