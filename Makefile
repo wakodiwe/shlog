@@ -1,17 +1,12 @@
-PREFIX ?= $(HOME)/.local
-DEST   := $(PREFIX)/bin/shlog
+.PHONY: all envrc format lint
 
-.PHONY: install uninstall check
+envrc:
+	@sh scripts/envrc.sh
 
-install: uninstall
-	@mkdir -p $(dir $(DEST))
-	@cp shlog $(DEST)
-	@chmod +x $(DEST)
-	@printf "Installed to %s\n" "$(DEST)"
+format:
+	@sh scripts/shfmt.sh
 
-uninstall:
-	@rm -f $(DEST)
-	@printf "Removed %s\n" "$(DEST)"
+lint:
+	@sh scripts/shellcheck.sh
 
-check:
-	@shellcheck shlog
+all: lint format envrc
