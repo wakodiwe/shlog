@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # Minimal POSIX sh Python-logging flavored utility. Single file. No dependencies.
 set -eu
+
 VERSION=0.0.1
 
 SHLOG_COLOR="${SHLOG_COLOR:-1}"
@@ -21,29 +22,6 @@ usage() {
     printf '%s\n' "Usage: $PROGNAME..."
     exit "${1:-0}"
 }
-
-argparsh() {
-    if [ "$#" -eq 1 ]; then
-        case "$1" in
-            -V | --version)
-                printf '%s' "$VERSION"
-                exit 1
-                ;;
-            --)
-                shift
-                return 1
-                ;;
-            -*)
-                printf "%s\n" "Unknown option: $1"
-                usage 1
-                ;;
-            *)
-                return 1
-                ;;
-        esac
-    fi
-}
-argparsh "$@"
 
 _log_colors() {
     case "$1" in
@@ -180,4 +158,9 @@ log_info() {
 
 log_debug() {
     _log 2 "$*"
+}
+
+shlog_version() {
+    log_msg "$VERSION"
+    exit 0
 }
